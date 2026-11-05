@@ -1,0 +1,20 @@
+{
+  "fps": 10.0,
+  "coordinate_system": "Shared local Cartesian XY, meters.",
+  "cameras": [
+    {
+      "camera_id": "camera_A"
+    },
+    {
+      "camera_id": "camera_B"
+    },
+    {
+      "camera_id": "camera_C"
+    },
+    {
+      "camera_id": "camera_D"
+    }
+  ],
+  "timestamp": "Shared synchronized time base; small residual camera synchronization error may remain.",
+  "world_valid": "1 means world_x/world_y are considered usable; when 0 they are NaN."
+}
