@@ -186,32 +186,15 @@ def run_baseline(
 
             compat.add((a_key, b_key))
 
-    # clique-based clustering (complete linkage)
-    # merge two clusters only when ALL cross-cluster pairs are in compat
-    cluster_of = {key: key for key in valid_keys}
-    members: dict = {key: {key} for key in valid_keys}
+    uf = _UnionFind()
+    for key in valid_keys:
+        uf.find(key)
+    for a_key, b_key in compat:
+        uf.union(a_key, b_key)
 
-    changed = True
-    while changed:
-        changed = False
-        for a_key, b_key in compat:
-            ca, cb = cluster_of[a_key], cluster_of[b_key]
-            if ca == cb:
-                continue
-            if all(
-                (x, y) in compat or (y, x) in compat
-                for x in members[ca] for y in members[cb]
-            ):
-                if len(members[ca]) < len(members[cb]):
-                    ca, cb = cb, ca
-                for key in members[cb]:
-                    cluster_of[key] = ca
-                members[ca] |= members[cb]
-                del members[cb]
-                changed = True
-                break
-
-    clusters = members
+    clusters: dict = defaultdict(set)
+    for key in valid_keys:
+        clusters[uf.find(key)].add(key)
 
     rows = []
     gid = 0
