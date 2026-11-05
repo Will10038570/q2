@@ -144,9 +144,8 @@ def run_baseline(
     valid_keys = [k for k in all_keys if not _is_distractor(summary[k], n_frames_thresh, conf_thresh)]
     distractor_keys = [k for k in all_keys if _is_distractor(summary[k], n_frames_thresh, conf_thresh)]
 
-    # Build compat: dict (a_key, b_key) → spatial_score (lower = better match).
-    # Score = spatial distance (m); 999.0 when spatial gate was skipped (no world coords).
-    compat: dict[tuple, float] = {}
+    # Build compat: set of cross-camera pairs that pass all gates.
+    compat: set[tuple] = set()
     n_overlapping_tested = n_sequential_tested = 0
 
     for i in range(len(valid_keys)):
@@ -174,9 +173,6 @@ def run_baseline(
                     d_overlap = (D_overlap_thresh_per_pair or {}).get(pair_key)
                     if d_overlap is not None and mean_d > d_overlap:
                         continue
-                    score = mean_d
-                else:
-                    score = 999.0  # gate skipped, no frame pairs within max_dt
             else:
                 n_sequential_tested += 1
                 earlier, later = (a, b) if a["t_end"] <= b["t_start"] else (b, a)
@@ -187,48 +183,35 @@ def run_baseline(
                     d_seq = (D_seq_thresh_per_pair or {}).get(pair_key)
                     if d_seq is not None and ep_dist > d_seq:
                         continue
-                    score = ep_dist
-                else:
-                    score = 999.0  # gate skipped, no world coords
 
-            compat[(a_key, b_key)] = score
+            compat.add((a_key, b_key))
 
-    # Greedy global matching with one-track-per-camera-per-cluster constraint.
-    # Sort all compat pairs by spatial score ascending (lower = more confident).
-    # For each pair, merge their clusters only if the merged cluster would not
-    # contain two tracks from the same camera. This prevents cascade merges from
-    # polluting GT clusters with non-GT tracks.
-    uf = _UnionFind()
-    for key in valid_keys:
-        uf.find(key)  # initialize all nodes
+    # clique-based clustering (complete linkage)
+    # merge two clusters only when ALL cross-cluster pairs are in compat
+    cluster_of = {key: key for key in valid_keys}
+    members: dict = {key: {key} for key in valid_keys}
 
-    # cluster_cameras: root_key → set of camera_ids present in that cluster
-    cluster_cameras: dict = {key: {key[0]} for key in valid_keys}
+    changed = True
+    while changed:
+        changed = False
+        for a_key, b_key in compat:
+            ca, cb = cluster_of[a_key], cluster_of[b_key]
+            if ca == cb:
+                continue
+            if all(
+                (x, y) in compat or (y, x) in compat
+                for x in members[ca] for y in members[cb]
+            ):
+                if len(members[ca]) < len(members[cb]):
+                    ca, cb = cb, ca
+                for key in members[cb]:
+                    cluster_of[key] = ca
+                members[ca] |= members[cb]
+                del members[cb]
+                changed = True
+                break
 
-    n_matched_pairs = 0
-    for (a_key, b_key), score in sorted(compat.items(), key=lambda x: x[1]):
-        root_a = uf.find(a_key)
-        root_b = uf.find(b_key)
-
-        if root_a == root_b:
-            continue
-
-        cams_a = cluster_cameras[root_a]
-        cams_b = cluster_cameras[root_b]
-
-        if cams_a & cams_b:  # camera conflict: same camera already in both clusters
-            continue
-
-        # Merge: _UnionFind.union sets parent[root_a] = root_b, so root_b survives
-        uf.union(a_key, b_key)
-        cluster_cameras[root_b] = cams_a | cams_b
-        del cluster_cameras[root_a]
-        n_matched_pairs += 1
-
-    clusters: dict = {}
-    for key in valid_keys:
-        root = uf.find(key)
-        clusters.setdefault(root, set()).add(key)
+    clusters = members
 
     rows = []
     gid = 0
@@ -257,7 +240,6 @@ def run_baseline(
         "overlapping_pairs_tested": n_overlapping_tested,
         "sequential_pairs_tested": n_sequential_tested,
         "compat_pairs": len(compat),
-        "matched_pairs": n_matched_pairs,
         "association_clusters": len(clusters),
     }
     return pd.DataFrame(rows), stats

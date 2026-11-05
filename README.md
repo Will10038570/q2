@@ -258,32 +258,32 @@ required_speed = endpoint_distance / gap
 
 | Metric | 值 |
 |---|---|
-| Precision | 0.398 |
-| Recall | 0.341 |
-| F1 | 0.367 |
-| TP | 105 |
-| FP | 159 |
-| FN | 203 |
+| Precision | 0.121 |
+| Recall | 0.062 |
+| F1 | 0.082 |
+| TP | 19 |
+| FP | 138 |
+| FN | 289 |
 
 | Camera Pair | Precision | Recall | F1 |
 |---|---|---|---|
-| A-B | 0.652 | 0.612 | 0.632 |
-| A-C | 0.488 | 0.426 | 0.455 |
-| A-D | 0.269 | 0.225 | 0.245 |
-| B-C | 0.286 | 0.273 | 0.279 |
-| B-D | 0.326 | 0.254 | 0.286 |
-| C-D | 0.372 | 0.314 | 0.340 |
+| A-B | 0.111 | 0.082 | 0.094 |
+| A-C | 0.368 | 0.149 | 0.212 |
+| A-D | 0.171 | 0.075 | 0.104 |
+| B-C | 0.000 | 0.000 | 0.000 |
+| B-D | 0.087 | 0.034 | 0.049 |
+| C-D | 0.000 | 0.000 | 0.000 |
 
 | Class | Precision | Recall | F1 |
 |---|---|---|---|
-| car | 0.382 | 0.373 | 0.378 |
-| truck | 0.611 | 0.647 | 0.629 |
+| car | 0.121 | 0.071 | 0.090 |
+| truck | 0.125 | 0.059 | 0.080 |
 | bus | 0.000 | 0.000 | 0.000 |
 
 | Pair Type | Total Pairs | Recall |
 |---|---|---|
-| Overlapping | 108 | 0.509 |
-| Sequential | 200 | 0.250 |
+| Overlapping | 108 | 0.056 |
+| Sequential | 200 | 0.065 |
 
 **分析**
 
@@ -291,18 +291,25 @@ required_speed = endpoint_distance / gap
 
 | Metric | Baseline 1 | Baseline 2 | 變化 |
 |---|---|---|---|
-| Precision | 0.011 | 0.398 | **+36x** |
-| Recall | 0.873 | 0.341 | -60% |
-| F1 | 0.022 | 0.367 | **+17x** |
+| Precision | 0.011 | 0.121 | +11x |
+| Recall | 0.873 | 0.062 | -93% |
+| F1 | 0.022 | 0.082 | +3.7x |
 
-Precision 大幅提升（36x）。Recall 下降的原因分析：
+Precision 提升（11x），但 Recall 大幅下降，根本原因：
 
-- **Gate 層 recall = 0.795**（245/308 GT pairs 通過所有 gate），表示 gate 設計合理。
-- **Clustering 層 recall = 0.341**，遠低於 gate 層。
-- 差距來源：compat set 中有 93.5% 為 FP pairs（3537/3782）。在 greedy matching 中，FP pairs 若 spatial score 較低（endpoint 距離更近），會搶先消耗 camera slot，導致某些 GT pairs 因 camera-conflict constraint 而無法合併。
-- Sequential recall（0.250）明顯低於 Overlapping recall（0.509），因為 sequential pairs 只有 endpoint 距離作為 spatial 訊號，空間判別力弱於重疊對的 per-frame 距離。
+- **Gate 層 recall = 0.795**（245/308 GT pairs 通過所有 gate），gate 設計合理。
+- **Clustering 層 recall = 0.062**（19/308），遠低於 gate 層——clique 的 cascade failure。
+- compat set 中有 **93.5% 為 FP pairs**（3537/3782）。Complete-linkage clique 在高 FP 率下，GT tracks 會被 FP pairs 先行佔據，導致 GT clusters 無法形成。
+- Sequential 與 Overlapping recall 均低（0.065 / 0.056），顯示問題不在 gate 而在 clustering。
 
-這個分析直接指出 Baseline 3 的動機：在純幾何特徵無法充分區分 GT 與 FP pairs 的情況下，需要加入 appearance（Re-ID）特徵提供更強的判別訊號。
+**Clustering 策略比較（開發過程實驗）**
+
+| 策略 | Precision | Recall | F1 | 說明 |
+|---|---|---|---|---|
+| Clique（本版） | 0.121 | 0.062 | 0.082 | 93.5% FP rate → cascade failure |
+| Greedy + Camera Constraint | 0.398 | 0.341 | 0.367 | 依距離排序後 greedy merge，同 cluster 每台 camera 至多一條 track |
+
+Greedy + Camera Constraint 策略顯著改善 F1（0.082 → 0.367），原因是：排序後優先合併距離最近的 pair，camera constraint 防止同攝影機 tracks 透過不同路徑進入同一 cluster，部分緩解 FP 干擾。但 compat set FP 率（93.5%）仍過高，純幾何特徵在此資料集的判別能力有限，直接指出 Baseline 3 的動機。
 
 ---
 

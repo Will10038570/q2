@@ -36,7 +36,6 @@ print(f"\n=== Phase 2 Gate Stats ===")
 print(f"  Overlapping pairs tested : {stats['overlapping_pairs_tested']}")
 print(f"  Sequential pairs tested  : {stats['sequential_pairs_tested']}")
 print(f"  Compatible pairs         : {stats['compat_pairs']}")
-print(f"  Matched pairs (greedy)   : {stats['matched_pairs']}")
 print(f"  Clusters formed          : {stats['association_clusters']}")
 print(f"  Total predicted IDs      : {pred['predicted_global_id'].nunique()}")
 
